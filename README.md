@@ -1,2 +1,0 @@
-# honeypot-report
-honeypot report
