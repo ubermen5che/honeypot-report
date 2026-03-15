@@ -70,61 +70,9 @@ IoT 장비(CCTV, DVR, NVR 등)를 대상으로 한 사이버 공격은 Mirai 봇
 본 시스템은 **물리적으로 분리된 2-인스턴스 아키텍처**로 구성된다. 허니팟(공격 노출면)과 로그 분석(내부 분석면)을 별도 인스턴스에 배치하여, 허니팟이 침해되더라도 수집된 로그 데이터의 무결성을 보장한다.
 
 
-```mermaid
-graph TB
-    subgraph INTERNET["🌐 인터넷 (공격자)"]
-        ATK["Attacker / Botnet"]
-    end
-
-    ATK -->|"Port 22, 23<br/>SSH / Telnet"| COWRIE
-    ATK -->|"Port 80, 443, 8000, 8080<br/>HTTP / HTTPS"| NGINX
-
-    subgraph INST1["Instance #1: hp-cctv — 허니팟<br/>Oracle Cloud ARM · 1 OCPU · 6GB RAM · Subnet 10.0.1.0/24"]
-        direction TB
-        %% 투명 노드 생성
-        SPACE1[ ]:::spacer
-
-        %% 투명 노드와 Nginx를 투명 선으로 연결하여 배치 고정
-        SPACE1 ~~~ NGINX
-        NGINX["🔀 Nginx<br/>리버스 프록시<br/>Server: Hikvision-Webs<br/>Self-signed SSL"]
-        NGINX -->|"proxy_pass :5000"| CCTV
-        CCTV["📹 CCTV Honeypot<br/>Python Flask<br/>CVE-2021-36260 / CVE-2017-7921<br/>Digest Auth · User-Agent Cloaking"]
-        COWRIE["🐚 Cowrie (Docker)<br/>SSH :2222 · Telnet :2223<br/>SSH-2.0-HiLinux-1.0<br/>Hikvision Profile"]
-        CCTV -->|"intrusions.json"| FB
-        COWRIE -->|"cowrie.json"| FB
-        FB["📤 Filebeat<br/>로그 수집 에이전트"]
-    end
-
-    FB -->|"Beats Protocol<br/>Port 5044"| LS
-
-    subgraph INST2["Instance #2: hp-logger — 로그 분석<br/>Oracle Cloud ARM · 3 OCPU · 18GB RAM · Subnet 10.0.2.0/24"]
-        LS["⚙️ Logstash (1GB Heap)<br/>GeoIP Enrichment<br/>MITRE ATT&CK Mapping<br/>IoC Extraction"]
-        LS --> ES
-        ES["🔍 Elasticsearch (8GB Heap)<br/>Index: honeypot-YYYY.MM.dd"]
-        ES --> KB
-        KB["📊 Kibana<br/>Attack Analysis Dashboard<br/>Nginx Basic Auth"]
-        IDS["🛡️ 침해 탐지 시스템 (Observer)<br/>Pull 기반 리포트 수집"]
-        IDS -->|"Telegram Alert"| TG["📱 Telegram Bot"]
-    end
-
-    IDS -.->|"SSH + Rsync<br/>(Pull)"| INST1
-
-    style INTERNET fill:#ff6b6b,stroke:#c0392b,color:#fff
-    style INST1 fill:#2d3436,stroke:#e17055,color:#dfe6e9
-    style INST2 fill:#2d3436,stroke:#00b894,color:#dfe6e9
-    style ATK fill:#d63031,stroke:#c0392b,color:#fff
-    style NGINX fill:#0984e3,stroke:#74b9ff,color:#fff
-    style CCTV fill:#e17055,stroke:#d63031,color:#fff
-    style COWRIE fill:#fdcb6e,stroke:#f39c12,color:#2d3436
-    style FB fill:#a29bfe,stroke:#6c5ce7,color:#fff
-    style LS fill:#00cec9,stroke:#00b894,color:#2d3436
-    style ES fill:#55efc4,stroke:#00b894,color:#2d3436
-    style KB fill:#81ecec,stroke:#00cec9,color:#2d3436
-    style IDS fill:#ffeaa7,stroke:#fdcb6e,color:#2d3436
-    style TG fill:#74b9ff,stroke:#0984e3,color:#fff
-    %% 스타일 정의: 테두리와 배경을 투명하게 설정
-    classDef spacer fill:none,stroke:none;
-```
+<p align="center">
+<img src="image/architecture.svg" alt="전체 시스템 아키텍처" width="100%">
+</p>
 
 ### 2.2 설계 원칙
 
@@ -168,32 +116,9 @@ graph TB
 
 #### 3.1.3 공격 유도 흐름 (Attack Flow)
 
-```mermaid
-sequenceDiagram
-    participant A as 🔴 공격자
-    participant W as 📹 웹 허니팟 (CCTV)
-    participant S as 🐚 SSH 허니팟 (Cowrie)
-
-    Note over A,S: Phase 1: 정찰 (Reconnaissance)
-    A->>+W: [1] GET /ISAPI/System/deviceInfo
-    W-->>-A: XML 장비정보 (DS-2CD2420F-IW)
-
-    A->>+W: [2] GET /Security/users (CVE-2017-7921)
-    W-->>-A: 가짜 사용자 목록 (admin, operator)
-
-    Note over A,S: Phase 2: 크레덴셜 수집
-    A->>+W: [3] GET /System/configurationFile
-    W-->>-A: 설정 파일 (SSH_User=admin, SSH_Pass=12345)
-
-    Note over A,S: Phase 3: 초기 침투 (Initial Access)
-    A->>+S: [4] SSH Login (admin / 12345)
-    S-->>-A: 가상 셸 환경 제공 (세션 기록 시작)
-
-    Note over A,S: Phase 4: 실행 (Execution)
-    A->>+S: [5] 명령 실행 (uname -a, wget ...)
-    S-->>A: 응답 반환 + TTP 수집
-    S-->>-A: 모든 행동 로깅 완료
-```
+<p align="center">
+<img src="image/attack_flow.svg" alt="공격 유도 흐름 (Attack Flow)" width="85%">
+</p>
 
 ### 3.2 SSH/Telnet 허니팟 (Cowrie)
 
@@ -216,12 +141,12 @@ sensor_name = hikvision_cctv_01
 
 [ssh]
 enabled = true
-listen_endpoints = tcp:2222:interface=0.0.0.0
+listen_endpoints = tcp:2222:interface=0[.]0[.]0[.]0
 version = SSH-2.0-HiLinux-1.0
 
 [telnet]
 enabled = true
-listen_endpoints = tcp:2223:interface=0.0.0.0
+listen_endpoints = tcp:2223:interface=0[.]0[.]0[.]0
 
 [output_jsonlog]
 enabled = true
@@ -231,19 +156,9 @@ epoch_timestamp = true
 
 ### 3.3 Nginx 리버스 프록시
 
-```mermaid
-graph LR
-    P80[":80 HTTP"] -->|proxy_pass| FLASK["🐍 Flask :5000"]
-    P443[":443 HTTPS"] -->|SSL Termination| FLASK
-    P8000[":8000"] -->|proxy_pass| FLASK
-    P8080[":8080"] -->|proxy_pass| FLASK
-
-    style P80 fill:#0984e3,stroke:#74b9ff,color:#fff
-    style P443 fill:#00b894,stroke:#55efc4,color:#fff
-    style P8000 fill:#0984e3,stroke:#74b9ff,color:#fff
-    style P8080 fill:#0984e3,stroke:#74b9ff,color:#fff
-    style FLASK fill:#e17055,stroke:#d63031,color:#fff
-```
+<p align="center">
+<img src="image/nginx_reverse_proxy.svg" alt="Nginx 리버스 프록시 라우팅" width="70%">
+</p>
 
 - **SSL**: Self-signed 인증서 (실제 CCTV 장비와 동일한 구성)
 - **Server 헤더**: `Hikvision-Webs` 고정 응답
@@ -262,7 +177,7 @@ graph LR
 | **Inbound** | 22022/tcp | ALLOW | 관리용 SSH (비표준 포트) |
 | **Inbound** | 22, 23, 2222, 2223/tcp | ALLOW | Cowrie 허니팟 포트 |
 | **Inbound** | 80, 443, 8000, 8080/tcp | ALLOW | CCTV 허니팟 포트 |
-| **Outbound** | 10.0.2.128:5044 | ALLOW | Logstash 전송 |
+| **Outbound** | 10[.]0[.]2[.]128:5044 | ALLOW | Logstash 전송 |
 | **Outbound** | 53/udp, 123/udp | ALLOW | DNS, NTP |
 | **Outbound** | 기타 모든 | **DROP** | C2 콜백 차단 |
 
@@ -271,7 +186,7 @@ graph LR
 | 방향 | 포트/대상 | 정책 | 비고 |
 |------|-----------|------|------|
 | **Inbound** | 22/tcp | ALLOW (관리 IP만) | SSH |
-| **Inbound** | 5044/tcp | ALLOW (10.0.1.21만) | Logstash |
+| **Inbound** | 5044/tcp | ALLOW (10[.]0[.]1[.]21만) | Logstash |
 | **Inbound** | 80/tcp | ALLOW | Kibana (Basic Auth) |
 
 ### 4.2 허니팟 침해 탐지 시스템 (5-Layer)
@@ -288,29 +203,9 @@ graph LR
 
 #### 4.2.1 Pull 기반 아키텍처
 
-```mermaid
-graph LR
-    subgraph TARGET["hp-cctv (Target)"]
-        CRON_T["⏰ Cron Job"] --> RPT["📄 리포트 생성"]
-        RPT --> F1["process_report.txt"]
-        RPT --> F2["network_report.txt"]
-        RPT --> F3["resource_report.txt"]
-    end
-
-    subgraph OBSERVER["hp-logger (Observer)"]
-        CRON_O["⏰ Cron (+5분 오프셋)"] --> PULL["📥 리포트 수집 (Pull)"]
-        PULL --> ANALYZE["🔍 분석"]
-        ANALYZE -->|이상 탐지 시| TG["📱 Telegram 알림"]
-    end
-
-    PULL -->|"SSH + Rsync"| F1
-    PULL -->|"SSH + Rsync"| F2
-    PULL -->|"SSH + Rsync"| F3
-
-    style TARGET fill:#2d3436,stroke:#e17055,color:#dfe6e9
-    style OBSERVER fill:#2d3436,stroke:#00b894,color:#dfe6e9
-    style TG fill:#74b9ff,stroke:#0984e3,color:#fff
-```
+<p align="center">
+<img src="image/pull_architecture.svg" alt="Pull 기반 모니터링 아키텍처" width="85%">
+</p>
 
 **설계 의도**: Telegram 봇 토큰 등 민감 정보를 허니팟(공격 노출면)에 저장하지 않음으로써, 허니팟 침해 시에도 알림 채널의 보안을 유지한다.
 
@@ -320,33 +215,9 @@ graph LR
 
 ### 5.1 데이터 처리 흐름
 
-```mermaid
-graph LR
-    COWRIE["🐚 Cowrie<br/>SSH/Telnet"] -->|cowrie.json| FB["📤 Filebeat"]
-    CCTV["📹 CCTV Honeypot<br/>HTTP"] -->|intrusions.json| FB
-
-    FB -->|Beats Protocol| LS["⚙️ Logstash"]
-
-    subgraph ENRICHMENT["Logstash Enrichment"]
-        direction TB
-        E1["🌍 GeoIP City/ASN"]
-        E2["🎯 MITRE ATT&CK"]
-        E3["🔑 IoC Extraction"]
-        E4["⚠️ Command Risk"]
-    end
-
-    LS --> ENRICHMENT
-    ENRICHMENT --> ES["🔍 Elasticsearch"]
-    ES --> KB["📊 Kibana"]
-
-    style COWRIE fill:#fdcb6e,stroke:#f39c12,color:#2d3436
-    style CCTV fill:#e17055,stroke:#d63031,color:#fff
-    style FB fill:#a29bfe,stroke:#6c5ce7,color:#fff
-    style LS fill:#00cec9,stroke:#00b894,color:#2d3436
-    style ENRICHMENT fill:#2d3436,stroke:#00cec9,color:#dfe6e9
-    style ES fill:#55efc4,stroke:#00b894,color:#2d3436
-    style KB fill:#81ecec,stroke:#00cec9,color:#2d3436
-```
+<p align="center">
+<img src="image/log_pipe_line.svg" alt="로그 수집·분석 파이프라인" width="100%">
+</p>
 
 ### 5.2 Logstash 파이프라인 규칙
 
@@ -538,7 +409,7 @@ graph LR
 | `a04ac6d98ad98931...` | `.i` | **17건** | 2026-01-31 | ⚠️ **Mirai 봇넷 변종 드로퍼** |
 | `c7999c2abaf0f4ba...` | `cat.sh` | 3건 | 2026-02-09 | 셸 스크립트 기반 드로퍼 |
 | `6dacd08750e10b76...` | (직접 업로드) | 1건 | 2026-02-02 | 바이너리 파일 업로드 |
-| `a5c41ad2a873e790...` | (직접 업로드) | 2건 | 2026-02-27 | Azure IP(20.61.127.52)에서 업로드 |
+| `a5c41ad2a873e790...` | (직접 업로드) | 2건 | 2026-02-27 | Azure IP(20[.]61[.]127[.]52)에서 업로드 |
 
 #### Mirai 봇넷 활동 상세 분석
 
@@ -547,14 +418,14 @@ graph LR
 1. **파일명 `.i`**: Mirai 계열 봇넷이 감염된 장비에서 사용하는 전형적인 숨김 파일명
 2. **다중 C2 서버**: 동일 SHA256 해시를 가진 파일이 **10개 이상의 서로 다른 배포 서버**에서 다운로드됨
 3. **프록시/감염 호스트 이용**: 접속 IP(`src_ip`)와 다운로드 URL의 IP가 불일치하는 케이스 다수 발견
-   - 예: `src_ip: 78.70.152.202` → `download: http://175.214.227.21:50962/.i`
+   - 예: `src_ip: 78[.]70[.]152[.]202` → `download: hxxp://175[.]214[.]227[.]21:50962/.i`
    - 이는 공격자가 **이미 감염된 다른 IoT 장비**를 악성코드 배포 서버로 활용하고 있음을 시사
 4. **비표준 포트 사용**: 배포 서버들이 `2605`, `50962`, `52280`, `38054` 등 높은 번호의 비표준 포트를 사용하여 방화벽 탐지를 회피
-5. **TFTP 프로토콜 활용**: 일부 다운로드 시도에서 `tftp://` 프로토콜이 관찰되었으며, 이는 IoT 장비에 흔히 존재하는 TFTP 클라이언트를 악용하는 수법
+5. **TFTP 프로토콜 활용**: 일부 다운로드 시도에서 `tfxp://` 프로토콜이 관찰되었으며, 이는 IoT 장비에 흔히 존재하는 TFTP 클라이언트를 악용하는 수법
 
 #### cat.sh 드로퍼 스크립트 분석
 
-`45.153.34.52`에서 다운로드된 `cat.sh` 셸 스크립트(SHA256: `c7999c2a...`)는 동일 IP에서 3회 반복 다운로드가 시도되었다. 이는 초기 침투 시 멀티 아키텍처 바이너리를 순차적으로 다운로드·실행하는 전형적인 **봇넷 드로퍼 패턴**이다.
+`45[.]153[.]34[.]52`에서 다운로드된 `cat.sh` 셸 스크립트(SHA256: `c7999c2a...`)는 동일 IP에서 3회 반복 다운로드가 시도되었다. 이는 초기 침투 시 멀티 아키텍처 바이너리를 순차적으로 다운로드·실행하는 전형적인 **봇넷 드로퍼 패턴**이다.
 
 ### 6.8 일별 공격 트렌드 분석
 
@@ -608,7 +479,7 @@ graph LR
 
 ### 7.3 장기 (3개월 이상)
 
-- **LLM 기반 TTP 분류**: GPT-4를 활용한 공격 패턴 자동 분석 및 실시간 시나리오 예측
+- **LLM 기반 TTP 분류**:AI를 활용한 공격 패턴 자동 분석 및 실시간 시나리오 예측
 - **Honeyscore 0.0 달성**: Shodan Honeyscore 탐지 테스트 자동화
 - **다중 허니팟 확장**: FTP, SMTP, 웹 관리자 패널 허니팟 추가
 
@@ -621,7 +492,6 @@ graph LR
 1. **설계부터 운영까지 전 과정을 1인 수행**: 위협 모델링 → 아키텍처 설계 → 클라우드 인프라 구축 → 허니팟 개발 → ELK 로그 파이프라인 → 보안 모니터링 → 운영까지 전체 라이프사이클 경험
 2. **실전적 보안 역량 입증**: CVE 분석(CVE-2021-36260, CVE-2017-7921), MITRE ATT&CK 프레임워크 매핑, 침해 탐지 시스템 설계 등 실무 수준의 보안 엔지니어링
 3. **비용 제로 운영**: Oracle Cloud Free Tier를 활용하여 월 $0으로 장기 운영 가능한 체계 구축
-4. **체계적 문서화**: ADR(Architecture Decision Records), 변경 이력 관리(changie), SSOT 원칙 적용
 
 ### 8.2 기술적 시사점
 
